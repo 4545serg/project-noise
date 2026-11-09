@@ -1,0 +1,47 @@
+name: Build PROJECT NOISE
+
+on:
+  push:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    container: devkitpro/devkitarm:latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install libraries and tools
+        run: |
+          dkp-pacman -Syu --noconfirm || true
+          dkp-pacman -S --needed --noconfirm 3ds-dev || true
+          apt-get update
+          apt-get install -y python3 git cmake build-essential zip
+
+      - name: Build 3DSX
+        run: |
+          python3 make_assets.py
+          make
+
+      - name: Build CIA (best effort)
+        continue-on-error: true
+        run: |
+          git clone --recursive --depth 1 https://github.com/carstene1ns/3ds-bannertool.git
+          cmake -S 3ds-bannertool -B bt-build
+          cmake --build bt-build -j2
+          git clone --depth 1 https://github.com/3DSGuy/Project_CTR.git
+          cd Project_CTR/makerom
+          (make deps || true)
+          make -j2
+          cd ../..
+          BT=$(find bt-build -name bannertool -type f | head -n 1)
+          $BT makebanner -i banner.png -a silence.wav -o banner.bnr
+          ./Project_CTR/makerom/bin/makerom -f cia -o PROJECT_NOISE.cia -elf PROJECT_NOISE.elf -rsf app.rsf -target t -exefslogo -icon PROJECT_NOISE.smdh -banner banner.bnr
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: PROJECT_NOISE
+          path: |
+            PROJECT_NOISE.3dsx
+            PROJECT_NOISE.cia
+          if-no-files-found: warn
